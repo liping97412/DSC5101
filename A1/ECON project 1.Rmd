@@ -1,0 +1,119 @@
+---
+title: 'Estimation of Coffee Demand and Supply in Dutch '
+group menber: WANG XINRUI, REN JIEWEN,ZHANG AO, LI LIPING
+date: "30 August 2018"
+output:
+  word_document: default
+  html_document: default
+---
+#### Identification of Demand Functions
+     In this session, we intend to identify the demand function. We assume logarithm linearty for the variables and apply the logarithmic form to OLS regression. We need to get rid of inflation impact on the prices by calculating their real values, then we convert variables into their logarithmic form for interpreting the parameters as elasticity. Refer to Appendix A.
+```{r}
+#Read data
+rawdata = read.csv("Project1Data.csv",header=T)
+
+#Check data
+head(rawdata)
+tail(rawdata)
+
+#Adjustment for Inflation
+rawdata$cprice <- rawdata$cprice/rawdata$oprice
+rawdata$tprice <- rawdata$tprice/rawdata$oprice
+rawdata$bprice <- rawdata$bprice/rawdata$oprice
+rawdata$wprice <- rawdata$wprice/rawdata$oprice
+rawdata$incom <- rawdata$incom/rawdata$oprice
+
+#Construction of variables in logs
+rawdata$ln_qu <- log(rawdata$qu)
+rawdata$ln_cprice <- log(rawdata$cprice)
+rawdata$ln_tprice <- log(rawdata$tprice)
+rawdata$ln_incom <- log(rawdata$incom)
+rawdata$ln_bprice <- log(rawdata$bprice)
+rawdata$ln_wprice <- log(rawdata$wprice)
+
+#Plot data
+library(ggplot2)
+ggplot(rawdata,aes(ln_qu, ln_cprice)) + geom_point() + geom_smooth(method = "lm")
+```
+
+#### OLS regression between consumption and prices
+It seems that we could simply build a simple  regression model to see the association between consumption on roasted coffee and its price using log-transformed values of qu and price.
+
+```{r}
+demand1.lm <- lm(ln_qu ~ ln_cprice,data=rawdata)
+summary(demand1.lm)
+```
+
+#### OLS regression with control variables
+```{r}
+demand2.lm <- lm(ln_qu ~ ln_cprice + ln_incom + ln_tprice + q1 + q2 + q3,data=rawdata )
+summary(demand2.lm)
+
+```
+From the result, we can see that tprice has p-value of 0.57979, which indicates there are strong evidences that tprice is not correlated with coffee demand. Therefore, we should eliminate tprice from our model.
+
+#### Compared these OLS results to those shown above, the magnitude of negative association between ln_qu (roasted coffee consumption) and ln_cprice (roasted coffee price) is bigger ( versus -0.165) after adjustment for income, tea price and seasonality. ln_cprice remains statistically significantly at a higher level associated with the ln_qu (p=). The coefficient decreases by 13%. Also we can see the adjusted R-squared increases to xxx from 0.028, so the latter model explains the variation of demand better.
+
+According to the informal rule, we meet the criteria for confounding. If the inclusion of a possible confounding variable in the model causes the association between the primary factor and the outcome to change by 10% or more, then the additional variable is a confounder. Because part of the negative association between demand and price is offset by income, tea price and seasonality, the coefficient in the Demand model 1 would increase.
+
+.... result improves but the model still has an endogeneity problem. Combinations of quantity and price that we observe reflect the forces on both demand and supply. Therefore the relationship we estimate is a mix of shifting demand and supply curves. To deal with this endogeneity problem we will estimate the demand equation using IV by a procedure called two-stage least squares (2SLS). 
+
+##### Key assumptions 
+Assumption 1:Coffee market equilibrium (qd=qs) 
+Assumption 2:Endogeneity of price as consumption and coffee price are determined at the same time and unobserved factors that increase demand will tend to increase the price as the equilibrium moves up the supply curve. 
+
+#### TSLS Regression
+In terms of coffee demand and supply, we take a retrospect on the logarithmic form of their equations:
+     Demand:
+''''qd=0+1ln_cprice+2ln_incom+3ln_tprice+4q1+5q2+6q3+u
+     Supply:
+''''qs=0+1ln_cprice+2ln_bprice+3ln_wprice+4q1+5q2+6q3+v
+ln_cprice and the error term u are correlated since unobserved factors that increase demand will tend to increase the price as the equilibrium moves up the supply curve. Under the above assumptions, working with the above demand and supply equation, we will have an equation for the ln_cprice in a reduced form:
+'''' ln_cprice=π0+π1ln_incom+π2ln_tprice+π3ln_bprice+π4ln_wprice+π5ln_q1+5ln_q2+6ln_q3+w
+##### Explaination of choices of IV
+
+```{r}
+
+cprice_IV_test <- lm(ln_cprice ~ln_incom + q1 + q2 + q3 + ln_wprice + ln_bprice + ln_tprice,data=rawdata )
+summary(cprice_IV_test)
+```
+Base on the results above,we will use wprice (price of labor per man hours) and bprice (price of coffee beans per kg) as instruments. The presumption is that with a higher wprice and bprice, price of coffee tend to increase, but that the production cost is not determined by the coffee market, so otherwise uncorrelated with coffee demand.
+
+```{r}
+library(AER)
+#Run 2SLS on ln_cprice
+demand.2sls.form <- ivreg(ln_qu ~ ln_cprice + ln_incom + q1 + q2 + q3 | ln_incom + q1 + q2 + q3 + ln_wprice + ln_bprice,data=rawdata)
+summary(demand.2sls.form, diagnostics = TRUE)
+
+```
+###### Sargan Test:If the null is rejected, it means that at least one of our instruments is invalid, and possibly all of them. Since p value is … > 0.05, we failed to reject the null hypothesis and therefore conclude that our instruments are valid.
+
+#### Wu-Hausman Test checks the consistency of the OLS estimates under the assumption that the IV is consistent.  If we accept the null, it essentially means that the OLS and IV estimates are similar, and endogeneity may not have been a big problem.Since p value is … > 0.05, we accept the null hypothesis and therefore conclude that our model does not include endogenous variables.
+
+'''' How should the quarter (season) dummies be interpreted? Does higher income raise coffee consumption? 
+Season dummies are variables representing seasonal fluctuations, which will affect demand of coffee. We introduces three dummies into our model to control the impact of seasonality. q1, q2 and q3 are relative to the baseline of q4, the default quarter is q4
+
+One of the variables we will use as an instrument is income per capita. The presumption is that with a larger income, consumers will tend to pay a higher price for coffee, but that the income is not determined by the coffee market, so otherwise it's an exogeneous variable in our model.
+
+#### 2. Identification of Supply Functions
+
+
+```{r}
+#Naive Supply Function Estimation
+supply1.lm <- lm(ln_qu ~ ln_cprice,data=rawdata)
+summary(supply1.lm)
+#Supply Function OLS Estimation 
+supply2.lm <- lm(ln_qu ~ ln_cprice + ln_wprice + ln_bprice + q1 + q2 + q3,data=rawdata)
+summary(supply2.lm)
+##explain why cprice is endogeneous?????Do we need to validate endogeneity???????????
+cprice_endo_test <- lm(supply2.lm$residuals ~ ln_cprice,data=rawdata)
+
+```
+
+```{r}
+
+#Run 2SLS for supply functiin on ln_cprice, income price and tea price are used as IV
+library(AER)
+supply.2sls.form <- ivreg(ln_qu ~ ln_cprice + ln_wprice + ln_bprice + q1 + q2 + q3 | ln_wprice + ln_bprice + q1 + q2 + q3 + ln_incom + ln_tprice, data=rawdata)
+summary(supply.2sls.form, diagnostics = TRUE)
+```

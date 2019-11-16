@@ -1,0 +1,363 @@
+---
+title: "econ project 3"
+output: html_document
+---
+###part 1: campaign effectiveness
+
+```{r message=FALSE}
+library(dplyr)
+# Read data
+campaign <- read.csv("retail/campaign.csv")
+control <- read.csv("retail/control.csv")
+treatment <- read.csv("retail/treatment.csv")
+demographics <- read.csv("retail/customer_demographics.csv")
+features <- read.csv("retail/customer_features.csv")
+
+campaign <- campaign %>%
+  select(-c(campaign_source,campaign_window_id,campaign_window_name,campaign_name,campaign_message_type,campaign_start_date,campaign_end_date,segment_code,segment_desc,is_control))
+control <- select(control,-c(X,event_year,trx_ref))
+treatment <- select(treatment,-c(X,event_year,trx_ref))
+# A binary variable to distinguish 'control' and 'treatment'
+control$treatment_customer <- 0
+treatment$treatment_customer <- 1
+demographics <- demographics %>% select(-c(X,birth_date,enrol_date,country,city))
+demographics <- demographics[!duplicated(demographics$customer_id),]
+features <- select(features,-c(X,first_date,last_date))
+# Merge data into two datasets 'customer_base' and 'customer_features'
+customer_features <- inner_join(demographics, features)
+
+# filter 'ramadan' customers
+control$event_date <- as.Date(control$event_date)
+treatment$event_date <- as.Date(treatment$event_date)
+# 319 observations, 239 unique customer ids
+control_ramadan <- control %>%
+  subset(event_date >= "2017-05-19" & event_date <= "2017-07-02")
+length(unique(control_ramadan$customer_id))
+# 54736 observations, 9920 unique customer ids
+treatment_ramadan <- treatment %>%
+  subset(event_date >= "2017-05-19" & event_date <= "2017-07-02")
+length(unique(treatment_ramadan$customer_id))
+
+ramadan_customers <- rbind(control_ramadan, treatment_ramadan)
+# filter all ramanda purchases, 4134 observations, 2896 unique customer ids
+#######ramadan_customers_p <- ramadan_customers %>% filter(event_type == 'p')
+#######length(unique(ramadan_customers_p$customer_id))
+
+# group by customer_id, calculate average purchase amount (10159 customer ids)
+ramadan_unique <- ramadan_customers %>%
+  group_by(customer_id) %>%
+  summarise (
+    ave_amount = mean(amount)
+    , ave_discount = mean(discount)
+    , treatment_customer = mean(treatment_customer))
+
+# filter 'before_ramadan' customers
+# 5545 observations, 1225 unique customer ids
+control_nonramadan <- control %>%
+  subset(event_date < "2017-05-19") 
+length(unique(control_nonramadan$customer_id))
+# 64228 observations, 9809 unique customer ids
+treatment_nonramadan <- treatment %>%
+  subset(event_date < "2017-05-19")
+length(unique(treatment_nonramadan$customer_id))
+nonramadan_customers <- rbind(control_nonramadan, treatment_nonramadan)
+
+# filter all before ramanda purchases
+#######nonramadan_customers_p <- nonramadan_customers %>% filter(event_type == 'p')
+#######length(unique(nonramadan_customers_p$customer_id))
+
+# group by customer_id, calculate average purchase amount (11034 customer ids)
+nonramadan_unique <- nonramadan_customers %>%
+  group_by(customer_id) %>%
+  summarise (
+    ave_amount = mean(amount)
+    , ave_discount = mean(discount)
+    , treatment_customer = mean(treatment_customer))
+# A binary variable to distinguish 'ramadan' period
+ramadan_unique$treatment_period <- 1
+nonramadan_unique$treatment_period <- 0
+
+customer_bin <- rbind(ramadan_unique, nonramadan_unique) # 21193 observations
+length(unique(customer_bin$customer_id)) # 11146 unique customer ids
+```
+
+```{r message=FALSE}
+################### prepare dataset for DiD ########################
+# merge with demographics
+whole_data <- inner_join(customer_bin, demographics)
+# convert factor variable into numeric
+whole_data[c(10,11)] <- sapply(whole_data[c(10,11)], as.numeric)
+# handle negative and unknown values
+#sum(nrow(filter(whole_data, ave_amount <= 0)))
+whole_data$ave_amount <- ifelse(whole_data$ave_amount <= 0, 1, whole_data$ave_amount)
+#sum(nrow(filter(whole_data, ave_discount <= 0)))
+whole_data$ave_discount <- ifelse(whole_data$ave_discount <= 0, 1, whole_data$ave_discount)
+whole_data$age_2017 <- ifelse(whole_data$age_2017 <= 0, 1, whole_data$age_2017)
+whole_data$member_age_2017 <- ifelse(whole_data$member_age_2017 <= 0, 1, whole_data$member_age_2017)
+# imbalanced dataset so we use sampling
+set.seed(1234)
+m <- whole_data %>% filter(ave_amount == 1) %>% filter(treatment_period*treatment_customer == 1)
+whole_data_clean <- anti_join(whole_data, m[sample(1:nrow(m), 2500),])
+# logarithmic transformation
+#whole_data_clean[,c(2,3,10,11)] <- lapply(whole_data_clean[,c(2,3,10,11)], as.numeric)
+whole_data_clean[,c(2,3,10,11)] <- lapply(whole_data_clean[,c(2,3,10,11)], log)
+#whole_data_clean$customer_period <- whole_data_clean$treatment_customer*whole_data_clean$treatment_period
+#################### DiD model #########################
+base_model1 <- lm(ave_amount ~ treatment_customer:treatment_period + member_age_2017 + age_2017 + ave_discount, data = whole_data_clean)
+summary(base_model1)
+#write.csv(whole_data_clean,"whole_data_clean.csv")
+
+
+#whole data clean2
+customers <- rbind(control,treatment) 
+whole_data_clean2 <- inner_join(customers,whole_data_clean) %>% filter(event_tag=="m_p") %>% filter(response_time>0)
+whole_data_clean2$response_time <- log(whole_data_clean2$response_time)
+#whole_data_clean2$response_time <- as.numeric(whole_data_clean2$response_time)
+#whole_data_clean2$customer_period <- whole_data_clean2$treatment_customer*whole_data_clean2$treatment_period
+
+
+base_model2 <- lm(response_time ~ treatment_customer:treatment_period + member_age_2017 + age_2017 + ave_discount, data = whole_data_clean2)
+summary(base_model2)
+#write.csv(whole_data_clean2,"whole_data_clean2.csv")
+
+```
+
+```{r} 
+# may not be used
+## filter purchase data
+sales <- merge2 %>%
+  filter(event_type == 'p')
+## Order by date
+sales <- sales[order(as.Date(sales$event_date)),]
+
+## Sales in different customer groups
+sales_regular <- sales %>%
+  filter(sales$customer_id %in% regular_customers_id$customer_id) %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount))
+
+sales_sensitive <- sales %>%
+  filter(sales$customer_id %in% price_sensitive_id$customer_id) %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount))
+
+sales_insensitive <- insensitive_customers_trx %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount)
+    , percentage_dis <- total_discount/total_amount)
+```
+
+
+###part2:price discrimination
+```{r message=FALSE}
+library(dplyr)
+# Read data
+campaign <- read.csv("campaign.csv")
+control <- read.csv("control.csv")
+treatment <- read.csv("treatment.csv")
+demographics <- read.csv("customer_demographics.csv")
+features <- read.csv("customer_features.csv")
+
+campaign <- select(campaign, -c(campaign_source,campaign_window_id,campaign_start_date,campaign_end_date))
+control <- select(control,-c(X))
+treatment <- select(treatment,-c(X))
+control$treatment_customer <- 0
+treatment$treatment_customer <- 1
+demographics <- select(demographics,-c(X))
+demographics <- demographics[!duplicated(demographics$customer_id),]
+features <- select(features,-X)
+
+# merge data
+customer_features <- merge(demographics, features, by='customer_id', all.x = TRUE)
+customer_features[c(8,14:20)] <- sapply(customer_features[c(8,14:20)],as.numeric)
+customer_features$ave_disc_pct = 1-(customer_features$ave_disc_pct/100)
+customer_features[customer_features == 0] <- NA
+customer_features <- customer_features %>%
+  na.omit()
+customer_features <- customer_features %>% mutate(
+  basket_quantity = ave_basket/ave_unit_price,
+  basket_sales_bf_disc = ave_basket/(ave_disc_pct)
+)
+
+whole_store_quantity <- sum(customer_features$basket_quantity)
+whole_store_sales <- sum(customer_features$basket_sales_bf_disc)
+whole_store_unit_price = whole_store_sales/whole_store_quantity 
+
+customer_features[c(8,14:20)] <- sapply(customer_features[c(8,14:20)],log)
+customer_features <- customer_features %>%
+  na.omit()
+
+customer_base <- rbind(control,treatment)
+customer_info <- merge(customer_features, customer_base, by='customer_id', all.y=TRUE)
+
+whole_data <- merge(customer_info, campaign, by.x = 'dim_campaign_key',by.y='dim_campaign_key',all.x = TRUE) %>% group_by(dim_campaign_key) %>% filter(dim_campaign_key != 0)
+whole_data$campaign_start_date <- as.Date(whole_data$campaign_start_date)
+whole_data$campaign_end_date <- as.Date(whole_data$campaign_end_date)
+
+# Sperate into Ramadan and non-Ramadan period
+ramadan_data <- whole_data
+ramadan_data <- ramadan_data %>% filter(campaign_start_date >= '2017-05-19') 
+ramadan_data <- ramadan_data %>% filter(campaign_end_date <= '2017-07-02')
+ramadan_data$treatment_period <- 1
+
+non_ramadan_data <- whole_data[ !(whole_data$dim_campaign_key %in% ramadan_data$dim_campaign_key), ]
+non_ramadan_data$treatment_period <- 0
+
+clean_whole_data <- rbind(ramadan_data,non_ramadan_data)
+
+```
+
+```{r message=FALSE}
+# Check initial number of customers
+customer_base <- customer_base %>% filter(event_type == "p")
+customer_base_id <- customer_base %>% select(customer_id) %>% unique()
+
+# Select regular customers
+regular_customers <- customer_base %>% filter(event_tag == "p_p") 
+regular_customers_id <- regular_customers %>% select(customer_id) %>% unique()
+regular_customers$trx_type <- 'regular'
+# Select price sensitive customers
+price_sensitive <-customer_base %>% filter(event_type == "p") %>% filter(num_of_m > 0) %>% filter(response_time <= 14) %>% filter(discount >0)
+price_sensitive_id <- price_sensitive %>% select(customer_id) %>% unique()
+price_sensitive$trx_type <- 'sensitive'
+
+# Union regular_customers and price_sensitive for further customer selection
+not_insensitive <- rbind(regular_customers,price_sensitive) %>% unique()
+# Select price insensitive customers
+price_insensitive <- customer_base[!(customer_base$trx_ref %in% not_insensitive$trx_ref), ]
+price_insensitive_id <- price_insensitive %>% select(customer_id) %>% unique()
+price_insensitive$trx_type <- 'insensitive'
+
+clean_whole_data_trx<-rbind(regular_customers,price_sensitive,price_insensitive)
+
+ranked <- with(clean_whole_data_trx, table(customer_id, trx_type))
+ranked <- as.data.frame.matrix(ranked) 
+customer_id = row.names(ranked)
+ranked <- ranked %>%
+  mutate(
+    customer_type = colnames(ranked)[apply(ranked,1,which.max)]
+  )
+ranked$customer_id <- customer_id
+ranked <- ranked[,4:5]
+ranked$customer_id <- as.numeric(ranked$customer_id)
+
+customer_group_trx <- inner_join(ranked,customer_features)
+
+regular_customers_id <- ranked %>% filter(customer_type == "regular") %>% select(customer_id)
+sensitive_customers_id <- ranked %>% filter(customer_type == "sensitive") %>% select(customer_id)
+insensitive_customers_id <- ranked %>% filter(customer_type == "insensitive") %>% select(customer_id)
+
+#regular_customers_trx <- customer_base[(customer_base$customer_id %in% regular_customers_id[,1]),]
+#sensitive_customers_trx <- customer_base[(customer_base$customer_id %in% sensitive_customers_id[,1]),]
+#insensitive_customers_trx <- customer_base[(customer_base$customer_id %in% insensitive_customers_id[,1]),]
+
+```
+
+```{r}
+# Filter out high income and low income customers
+
+# Calculate average item price
+mean_ave_unit_price <- mean(customer_features$ave_unit_price)
+
+# Seperate high income and low income customers
+high_income_customers <- customer_features %>% filter(ave_unit_price > mean_ave_unit_price)
+low_income_customers <- customer_features %>% filter(ave_unit_price <= mean_ave_unit_price)
+
+second_price_discrimination1 <- lm(ave_basket/ave_unit_price ~ ave_disc_pct,data = high_income_customers)
+summary(second_price_discrimination1)
+
+second_price_discrimination2 <- lm(ave_basket/ave_unit_price ~ ave_disc_pct + latency + recency + age_2017,data = low_income_customers)
+summary(second_price_discrimination2)
+
+p <- plot(x=(customer_features$ave_disc_pct), y=customer_features$ave_basket/customer_features$ave_unit_price, xlab = "Price(taken into account of discount)", ylab ="Quantity",col = "gray50")
+abline(lm(ave_basket/ave_unit_price ~ ave_disc_pct,data = high_income_customers),col="red")
+abline(lm(ave_basket/ave_unit_price ~ ave_disc_pct,data = low_income_customers),col="blue")
+legend(0.4,1.25,legend=c("High income", "Low income"),
+       col=c("red", "blue"), lty=1:2, cex=0.8)
+
+```
+
+
+```{r}
+sales_regular <- customer_features[customer_features$customer_id %in% regular_customers_id$customer_id,]
+sales_sensitive <- customer_features[customer_features$customer_id %in% sensitive_customers_id$customer_id,]
+sales_insensitive <- customer_features[customer_features$customer_id %in% insensitive_customers_id$customer_id,]
+
+#model1 <- lm(basket_count ~ ave_unit_price + member_type+ person_gender+ marital_status+ age_2017  + ave_disc_pct,data = sales_sensitive)
+#summary(model1)
+
+sales_sensitive$price <- whole_store_unit_price*sales_sensitive$ave_disc_pct
+sales_insensitive$price <- whole_store_unit_price*sales_insensitive$ave_disc_pct
+sales_regular$price <- whole_store_unit_price*sales_regular$ave_disc_pct
+
+customer_group_trx$discount_price = customer_group_trx$ave_unit_price*customer_group_trx$ave_disc_pct
+customer_group_trx$customer_type <- as.factor(customer_group_trx$customer_type)
+customer_group_trx$customer_type <-relevel(customer_group_trx$customer_type ,ref ="regular")
+
+price_discrimination <- lm(ave_basket/ave_unit_price ~ (ave_disc_pct)*customer_type + latency + recency,data = customer_group_trx)
+summary(price_discrimination)
+
+plot(x=(customer_group_trx$ave_disc_pct), y=customer_group_trx$ave_basket/customer_group_trx$ave_unit_price)
+abline(lm(ave_basket/ave_unit_price ~ ave_disc_pct,data = customer_group_trx))
+
+```
+
+
+```{r} 
+# may not be used
+## filter purchase data
+sales <- customer_features %>%
+  filter(event_type == 'p')
+## Order by date
+sales <- sales[order(as.Date(sales$event_date)),]
+
+## Sales in different customer groups
+sales_regular <- sales %>%
+  filter(sales$customer_id %in% regular_customers_id$customer_id) %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount))
+
+sales_sensitive <- sales %>%
+  filter(sales$customer_id %in% price_sensitive_id$customer_id) %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount))
+
+sales_insensitive <- insensitive_customers_trx %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount)
+    , percentage_dis <- total_discount/total_amount)
+```
+
+
+You can also embed plots, for example:
+
+```{r message=FALSE}
+
+library(plm)
+baseline <- lm(as.numeric(amount) ~ treatment_customer *  discount+ treatment_period + person_gender+marital_status+as.numeric(age_2017)+member_type+as.numeric(recency)+as.numeric(latency)+as.numeric(basket_count)+as.numeric(campaign_target_count_delivered), data=clean_whole_data)
+summary(baseline)
+
+base <- lm(amount ~ dim_campaign_key+country+person_gender+marital_status+age_2017, data=ramadan_data)
+summary(base)
+```
+
+
+

@@ -1,0 +1,168 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r message=FALSE}
+library(dplyr)
+# Read data
+campaign <- read.csv("retail/campaign.csv")
+control <- read.csv("retail/control.csv")
+treatment <- read.csv("retail/treatment.csv")
+demographics <- read.csv("retail/customer_demographics.csv")
+features <- read.csv("retail/customer_features.csv")
+
+campaign <- campaign %>%
+  select(-c(campaign_source,campaign_window_id,campaign_window_name,campaign_name,campaign_message_type,campaign_start_date,campaign_end_date,segment_code,segment_desc,is_control))
+control <- select(control,-c(X,event_year,trx_ref))
+treatment <- select(treatment,-c(X,event_year,trx_ref))
+# A binary variable to distinguish 'control' and 'treatment'
+control$treatment_customer <- 0
+treatment$treatment_customer <- 1
+demographics <- demographics %>% select(-c(X,birth_date,enrol_date,country,city))
+demographics <- demographics[!duplicated(demographics$customer_id),]
+features <- select(features,-c(X,first_date,last_date))
+# Merge data into two datasets 'customer_base' and 'customer_features'
+customer_features <- inner_join(demographics, features)
+
+# filter 'ramadan' customers
+control$event_date <- as.Date(control$event_date)
+treatment$event_date <- as.Date(treatment$event_date)
+# 319 observations, 239 unique customer ids
+control_ramadan <- control %>%
+  subset(event_date >= "2017-05-19" & event_date <= "2017-07-02")
+length(unique(control_ramadan$customer_id))
+# 54736 observations, 9920 unique customer ids
+treatment_ramadan <- treatment %>%
+  subset(event_date >= "2017-05-19" & event_date <= "2017-07-02")
+length(unique(treatment_ramadan$customer_id))
+
+ramadan_customers <- rbind(control_ramadan, treatment_ramadan)
+# filter all ramanda purchases, 4134 observations, 2896 unique customer ids
+#######ramadan_customers_p <- ramadan_customers %>% filter(event_type == 'p')
+#######length(unique(ramadan_customers_p$customer_id))
+
+# group by customer_id, calculate average purchase amount (10159 customer ids)
+ramadan_unique <- ramadan_customers %>%
+  group_by(customer_id) %>%
+  summarise (
+    ave_amount = mean(amount)
+    , ave_discount = mean(discount)
+    , treatment_customer = mean(treatment_customer))
+
+# filter 'before_ramadan' customers
+# 5545 observations, 1225 unique customer ids
+control_nonramadan <- control %>%
+  subset(event_date < "2017-05-19") 
+length(unique(control_nonramadan$customer_id))
+# 64228 observations, 9809 unique customer ids
+treatment_nonramadan <- treatment %>%
+  subset(event_date < "2017-05-19")
+length(unique(treatment_nonramadan$customer_id))
+nonramadan_customers <- rbind(control_nonramadan, treatment_nonramadan)
+
+# filter all before ramanda purchases
+#######nonramadan_customers_p <- nonramadan_customers %>% filter(event_type == 'p')
+#######length(unique(nonramadan_customers_p$customer_id))
+
+# group by customer_id, calculate average purchase amount (11034 customer ids)
+nonramadan_unique <- nonramadan_customers %>%
+  group_by(customer_id) %>%
+  summarise (
+    ave_amount = mean(amount)
+    , ave_discount = mean(discount)
+    , treatment_customer = mean(treatment_customer))
+# A binary variable to distinguish 'ramadan' period
+ramadan_unique$treatment_period <- 1
+nonramadan_unique$treatment_period <- 0
+
+customer_bin <- rbind(ramadan_unique, nonramadan_unique) # 21193 observations
+length(unique(customer_bin$customer_id)) # 11146 unique customer ids
+```
+
+```{r message=FALSE}
+################### prepare dataset for DiD ########################
+# merge with demographics
+whole_data <- inner_join(customer_bin, demographics)
+# convert factor variable into numeric
+whole_data[c(10,11)] <- sapply(whole_data[c(10,11)], as.numeric)
+# handle negative and unknown values
+#sum(nrow(filter(whole_data, ave_amount <= 0)))
+whole_data$ave_amount <- ifelse(whole_data$ave_amount <= 0, 1, whole_data$ave_amount)
+#sum(nrow(filter(whole_data, ave_discount <= 0)))
+whole_data$ave_discount <- ifelse(whole_data$ave_discount <= 0, 1, whole_data$ave_discount)
+whole_data$age_2017 <- ifelse(whole_data$age_2017 <= 0, 1, whole_data$age_2017)
+whole_data$member_age_2017 <- ifelse(whole_data$member_age_2017 <= 0, 1, whole_data$member_age_2017)
+# imbalanced dataset so we use sampling
+set.seed(1234)
+m <- whole_data %>% filter(ave_amount == 1) %>% filter(treatment_period*treatment_customer == 1)
+whole_data_clean <- anti_join(whole_data, m[sample(1:nrow(m), 2500),])
+# logarithmic transformation
+#whole_data_clean[,c(2,3,10,11)] <- lapply(whole_data_clean[,c(2,3,10,11)], as.numeric)
+whole_data_clean[,c(2,3,10,11)] <- lapply(whole_data_clean[,c(2,3,10,11)], log)
+#whole_data_clean$customer_period <- whole_data_clean$treatment_customer*whole_data_clean$treatment_period
+#################### DiD model #########################
+base_model1 <- lm(ave_amount ~ treatment_customer:treatment_period + member_age_2017 + age_2017 + ave_discount, data = whole_data_clean)
+summary(base_model1)
+#write.csv(whole_data_clean,"whole_data_clean.csv")
+
+
+#whole data clean2
+customers <- rbind(control,treatment) 
+whole_data_clean2 <- inner_join(customers,whole_data_clean) %>% filter(event_tag=="m_p") %>% filter(response_time>0)
+whole_data_clean2$response_time <- log(whole_data_clean2$response_time)
+#whole_data_clean2$response_time <- as.numeric(whole_data_clean2$response_time)
+#whole_data_clean2$customer_period <- whole_data_clean2$treatment_customer*whole_data_clean2$treatment_period
+
+
+base_model2 <- lm(response_time ~ treatment_customer:treatment_period + member_age_2017 + age_2017 + ave_discount, data = whole_data_clean2)
+summary(base_model2)
+#write.csv(whole_data_clean2,"whole_data_clean2.csv")
+
+```
+
+```{r} 
+# may not be used
+## filter purchase data
+sales <- merge2 %>%
+  filter(event_type == 'p')
+## Order by date
+sales <- sales[order(as.Date(sales$event_date)),]
+
+## Sales in different customer groups
+sales_regular <- sales %>%
+  filter(sales$customer_id %in% regular_customers_id$customer_id) %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount))
+
+sales_sensitive <- sales %>%
+  filter(sales$customer_id %in% price_sensitive_id$customer_id) %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount))
+
+sales_insensitive <- insensitive_customers_trx %>%
+  group_by(as.Date(event_date)) %>%
+  summarise(
+    customers <- n()
+    , total_amount = sum(amount)
+    , total_discount = sum(discount)
+    , percentage_dis <- total_discount/total_amount)
+```
+
+

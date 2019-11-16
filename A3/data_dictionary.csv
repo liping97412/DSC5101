@@ -1,0 +1,68 @@
+Table,Field,Details
+control,customer_id,unique customer id
+control,dim_campaign_key,campaign key for table joins
+control,event_type,"m = message, p = purchase"
+control,event_date,"date of event, m or p"
+control,amount,purchase if amount >= 0 and message if amount < 0
+control,discount,amount of discount receieved for product
+control,trx_ref,unique transaction id
+control,prev_event_type,"previous event type, if 0 then this is the first event"
+control,prev_event_date,previous event date if not 0. if 0 then NA
+control,days_from_prev,"how many days between event, if null it implies no previous event"
+control,event_tag,tag of previous and current event
+control,year,year of transaction date
+control,campaign_start_date,"date indicates the start of the marketing event, NA if purchase"
+control,campaign_end_date,"date indicates the endof the marketing event, NA if purchase"
+control,response_time,number of days between last message and current purchase. If current is not purchase and previous is not message then NA
+control,num_of_m,number of messages sent between last message and current event. Resets to 0 if pervious event is a purchase
+treatment,customer_id,unique customer id
+treatment,dim_campaign_key,campaign key for table joins
+treatment,event_type,"m = message, p = purchase"
+treatment,event_date,"date of event, m or p"
+treatment,amount,purchase if amount >= 0 and message if amount < 0
+treatment,discount,amount of discount receieved for product
+treatment,trx_ref,unique transaction id
+treatment,prev_event_type,"previous event type, if 0 then this is the first event"
+treatment,prev_event_date,previous event date if not 0. if 0 then NA
+treatment,days_from_prev,"how many days between event, if null it implies no previous event"
+treatment,event_tag,tag of previous and current event
+treatment,year,year of transaction date
+treatment,campaign_start_date,"date indicates the start of the marketing event, NA if purchase"
+treatment,campaign_end_date,"date indicates the endof the marketing event, NA if purchase"
+treatment,response_time,number of days between last message and current purchase. If current is not purchase and previous is not message then NA
+treatment,num_of_m,number of messages sent between last message and current event. Resets to 0 if pervious event is a purchase
+demographics,dim_card_number_key,"membership card key for table joins, not needed here"
+demographics,customer_id,unique customer id
+demographics,is_control,"treated, control or dirty, where dirty implies control found in treated"
+demographics,member_type,LYB - Highest membership status / Stamp - Lowest Member status.
+demographics,person_gender,male/female
+demographics,marital_status,single/married
+demographics,birth_date,date of birth
+demographics,enrol_date,date of membership enrolment (tied to card)
+demographics,age_2017,age as of 2017-04-01
+demographics,member_age_2017,membership age as of 2017-04-01
+demographics,country,country origin of member
+demographics,city,city origin of member
+features,customer_id,unique customer id
+features,first_date,first visit from 20160401 to 20170331
+features,last_date,last visit from 20160401 to 20170331
+features,recency,number of days from  20160401 to last visit
+features,latency,average days between visits
+features,basket_count,number of visits from 20160401 to 20170331
+features,annual_spend,total gross sales
+features,ave_basket,average gross sales per visit
+features,ave_unit_price,average item list price
+features,ave_disc_pct,average discount percentage
+campaign,dim_campaign_key,campaign key for table joins
+campaign,campaign_id,campaign id
+campaign,campaign_name,name of the campaign
+campaign,campaign_message_type,"campaign engagement type, e.g., sms or app notification"
+campaign,campaign_start_date,date of start of campaign
+campaign,campaign_end_date,date of end of campaign
+campaign,campaign_target_count,target number of customers to reach
+campaign,message_content,actual message content
+campaign,campaign_target_count_delivered,number of customers reached
+campaign,campaign_window_name,more campaign information
+campaign,segment_code,code to distinguish between segments
+campaign,segment_desc,description of targeted segment
+campaign,is_control,"true if control group, otherwise false"

@@ -1,0 +1,243 @@
+---
+title: 'Estimating the announcement effect of the Volcker Rule '
+group menber: WANG XINRUI, REN JIEWEN,ZHANG AO, LI LIPING
+date: "04 October 2018"
+output:
+  html_document: default
+  word_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Baseline Model ###
+```{r warning=FALSE, message=FALSE}
+library(plm)
+library(dplyr)
+library(MatchIt)
+
+#Read data
+rawdata <- read.csv("DiD_Data.csv",header=T)
+
+# Estimating the DID estimator
+
+# FE:no Controls:no
+reg1 <- lm(formula = TAR ~ after_DFA, data = rawdata)
+summary(reg1)
+
+# FE:no Controls:yes
+reg2 <- lm(formula = TAR ~ after_DFA + Leverage_Ratio + Total_Asset +Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio +CPP, data = rawdata)
+summary(reg2)
+
+# FE:no Controls:yes
+didreg <- lm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset +Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio +CPP, data = rawdata)
+summary(didreg)
+#The coefficient for ‘did’ is the differences-in-differences estimator. The small coefficient indicating there is a very weak significance that the treatment has a positive effect. Overall, the trading asset ratio remains the same. 
+
+# FE:yes Controls:yes
+didreg2 <- plm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset +Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'),model = "within", data = rawdata)
+summary(didreg2)
+```
+
+### Propensity Matching ###
+```{r}
+### Propensity Match Function ###
+propMatch <- function(input_data, matching_ratio) {
+  #Clean data passed in make sure there is no null variables
+  data_to_be_matched <- as.data.frame(na.omit(input_data))
+  #Perform matching
+  m.out = matchit(formula = Affected_BHC ~ Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio + Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'), method = "nearest", ratio = matching_ratio, data = data_to_be_matched)
+  output_data <- match.data(m.out)
+  #Save matched banks 
+  matched_banks=output_data[c(1,16)]
+  #Merge matched banks with the original dataset
+  data_matched=merge(matched_banks,rawdata,by=c('id'))
+  return(data_matched)
+}
+
+# Robustness Test 1
+# Perform propensity matching for 20040930 with a matching ratio 3
+prop_data_1 <- rawdata[rawdata$Time == 20040930,] 
+prop_data_1 <- as.data.frame(na.omit(prop_data_1))
+matched_data_1 <- propMatch(prop_data_1,3)
+
+# Check result of propensity matching for 20040930
+m.out = matchit(formula = Affected_BHC ~ Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio + Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'), method = "nearest", ratio = 3, data = prop_data_1)
+#The rightmost columns in these summary data show the median, mean, and maximum quartile-differences between the treated and control data; smaller QQ values indicates better matching. It is clear that propensity score matching is a useful tool for reducing selection bias and strengthening causal conclusions.
+summary(m.out)
+plot(m.out, type = "hist")
+
+# Checking robustness with Propensity Matching on 20040930 with a matching ratio 3
+model_prop_1 <- plm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio,index = c('id','Time'), data = matched_data_1)
+summary(model_prop_1)
+
+# Robustness Test 2
+# Perform propensity matching for 20040930 with a matching ratio 5
+prop_data_2 <- rawdata[rawdata$Time == 20040930,] 
+prop_data_2 <- as.data.frame(na.omit(prop_data_2))
+matched_data_2 <- propMatch(prop_data_2,5)
+
+# Check result of propensity matching for 20040930 with a matching ratio of 3
+m.out.2 = matchit(formula = Affected_BHC ~ Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio + Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'), method = "nearest", ratio = 5, data = prop_data_2)
+summary(m.out.2)
+plot(m.out.2, type = "hist")
+
+# Checking robustness with Propensity Matching on 20040930 with a matching ratio of 5
+model_prop_2 <- plm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio,index = c('id','Time'), data = matched_data_2)
+summary(model_prop_2)
+
+# Robustness Test 3
+# Perform propensity matching for 20090331 with a matching ratio of 3
+prop_data_3 <- rawdata[rawdata$Time == 20090630,] 
+prop_data_3 <- as.data.frame(na.omit(prop_data_3))
+matched_data_3 <- propMatch(prop_data_3,3)
+
+# Check result of propensity matching for 200906030 with a matching ratio of 3
+m.out.3 = matchit(formula = Affected_BHC ~ Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio + Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'), method = "nearest", ratio = 3, data = prop_data_3)
+summary(m.out.3)
+plot(m.out.3, type = "hist")
+
+# Checking robustness with Propensity Matching on 20090630 with a matching ratio of 3
+model_prop_3 <- plm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio,index = c('id','Time'), data = matched_data_3)
+summary(model_prop_3)
+
+```
+
+### Top 30 bank analysis ###
+```{r}
+# Select 30 banks with highest trading ratios at the 20040930（the very first quarter)
+banks_at_20040930 <- rawdata[rawdata$Time == 20040930,] 
+banks_at_20040930 <- as.data.frame(na.omit(banks_at_20040930))
+# Perform Propensity matching
+matched_20040930 <- propMatch(banks_at_20040930,3)
+
+# Find id of the top 30 banks 
+top30Banks <- (banks_at_20040930 %>% arrange(desc(TAR)) %>% head(30))[, "id"] 
+# Set column "top 30"
+top30AnalysisData <- matched_20040930
+top30AnalysisData$top30 <- 0
+top30AnalysisData[top30AnalysisData$id %in% top30Banks, "top30"] <- 1
+
+model_Top30 <- plm(TAR ~ (after_DFA * top30) + (after_DFA * Affected_BHC) + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = top30AnalysisData, index = c("id", "Time"))
+summary(model_Top30)
+```
+
+### Bottom 30 bank (but TAR is not 0) analysis ###
+```{r}
+# Find id of the top 30 banks 
+bottom30Banks <- (matched_20040930[matched_20040930$TAR >0,] %>% arrange(TAR) %>% head(30)) [, "id"] 
+# Set column "bottom 30"
+bottom30AnalysisData <- matched_20040930
+bottom30AnalysisData$bottom30 <- 0
+bottom30AnalysisData[bottom30AnalysisData$id %in% bottom30Banks, "bottom30"] <- 1
+
+model_bottom30 <- plm(TAR ~ (after_DFA * bottom30) + (after_DFA * Affected_BHC) + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = bottom30AnalysisData, index = c("id", "Time"))
+summary(model_bottom30)
+```
+
+### Excluding non-trading BHCs analysis ###
+```{r}
+# Find id of the non-trading banks
+trading_banks <- matched_20040930[matched_20040930$TAR != 0,][,"id"]
+
+# Set column "trading"
+trading_analysis_data <- matched_20040930
+trading_analysis_data$trading <- 0
+trading_analysis_data[trading_analysis_data$id %in% trading_banks, "trading"] <- 1
+
+model_trading <- plm(TAR ~ (after_DFA * trading) + (after_DFA * Affected_BHC) + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = trading_analysis_data, index = c("id", "Time"))
+summary(model_trading)
+```
+
+###  Pre-2007 affectedness analysis ###
+
+```{r}
+# Change date class from "numeric" to "date"
+rawdata$Time <- as.Date(as.character(rawdata$Time), "%Y%m%d")
+
+# Select data before 2007
+pre2007_data <- rawdata[rawdata$Time < '2007-03-31',]
+group_affect <- aggregate(TAR ~ id, pre2007_data, mean)
+pre2007_data$pre_2007_TAR <- merge(pre2007_data,group_affect,by.x = "id", by.y = "id",all.x = TRUE)[,ncol(pre2007_data)+1]
+
+# Select data in and after 2007, set column "pre_2007"
+after2007_data <- rawdata[rawdata$Time > '2006-12-31',]
+after2007_data$pre_2007_TAR <- after2007_data$TAR
+
+pre_2007_affecedness_data <- rbind(pre2007_data,after2007_data)
+
+model_pre2007_affectedness <- plm(TAR ~ (Affected_BHC * pre_2007_TAR) + (after_DFA * Affected_BHC) + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = pre_2007_affecedness_data, index = c("id", "Time"))
+summary(model_pre2007_affectedness)
+```
+
+### Trading asset ratio figure ###
+
+```{r warning=FALSE, message=FALSE}
+# calculate mean(TAR) group by 'Time'
+control_data <- rawdata[rawdata$Affected_BHC == 0,]
+control_mean <- aggregate( TAR ~ Time, control_data, mean)
+#write.csv(x = control_mean, file = "control.csv")
+# refer to 'top30AnalysisData'
+top30_data <- top30AnalysisData[top30AnalysisData$top30 == 1,]
+top30_mean <- aggregate( TAR ~ Time, top30_data, mean)
+#write.csv(x = top30_mean, file = "top30.csv")
+# affected group not including top30
+affect_data <- rawdata[rawdata$Affected_BHC == 1,]
+affect_data <- affect_data[affect_data$id != top30Banks,]
+affect_mean <- aggregate( TAR ~ Time, affect_data, mean)
+#write.csv(x = affect_mean, file = "affect.csv")
+```
+
+### Hypo2 ###
+
+```{r message=FALSE}
+rawdata <- read.csv("DiD_data.csv")
+library(zoo)
+# calculate ln_z_score
+rawdata$roll_ROA_sd <- rollapply(rawdata$ROA,7,sd,fill=0)
+rawdata$ln_z_score <- log((rawdata$ROA+rawdata$Leverage_Ratio)/rawdata$roll_ROA_sd)
+# omit Inf value
+rawdata_omit <- rawdata[!is.infinite(rawdata$ln_z_score),]
+# panel regression
+model_Z <- plm(ln_z_score ~ Affected_BHC * after_DFA + TAR  + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = rawdata_omit, index = c("id", "Time"))
+summary(model_Z)
+```
+
+### ln_z_score figure ###
+
+```{r warning=FALSE, message=FALSE}
+# calculate mean(ln_z_score) group by 'Time'
+controlz_data <- rawdata_omit[rawdata_omit$Affected_BHC == 0,]
+controlz_mean <- aggregate(ln_z_score ~ Time, controlz_data, mean)
+#write.csv(x = controlz_mean, file = "controlz.csv")
+# refer to 'top30AnalysisData'
+top30z_data <- rawdata_omit[rawdata_omit$id == top30Banks,]
+top30z_mean <- aggregate(ln_z_score ~ Time, top30z_data, mean)
+#write.csv(x = top30z_mean, file = "top30z.csv")
+# affected group not including top30
+affectz_data <- rawdata_omit[rawdata_omit$Affected_BHC == 1,]
+affectz_data <- affectz_data[affectz_data$id != top30Banks,]
+affectz_mean <- aggregate(ln_z_score ~ Time, affectz_data, mean)
+#write.csv(x = affectz_mean, file = "affectz.csv")
+```
+
+### Placebo Test ###
+
+```{r}
+#creat two vectors to collect the value of p-value and coefficient of interaction term
+coefficientVector <- c()
+coefficient <- c()
+#run 100 random model 
+for(i in 1:100){
+  rawdata$random_BHC <- sample(c(0,1), size = nrow(rawdata), replace = TRUE)
+  model_random <- plm(TAR ~ random_BHC * after_DFA + ROA + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = rawdata, index = c("id", "Time"), model = "within")
+  coefficientVector[i] <- summary(model_random)$coefficients[12, 4]
+  coefficient[i] <- summary(model_random)$coefficients[12, 1]
+}
+#print the values of the p-value
+format(coefficientVector, digits = 4)
+#plot the coefficient of 100 random models
+library(ggplot2)
+coefficient <- as.data.frame(coefficient)
+ggplot(coefficient,aes(x=coefficient)) + geom_histogram(alpha = 0.5, position = 'identity')
+```

@@ -1,0 +1,168 @@
+---
+title: 'Estimation of Coffee Demand and Supply in Dutch '
+group menber: WANG XINRUI, REN JIEWEN,ZHANG AO, LI LIPING
+date: "04 October 2018"
+output:
+  html_document: default
+  word_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Baseline Model ###
+```{r}
+library(plm)
+library(dplyr)
+library(MatchIt)
+
+#Read data
+rawdata = read.csv("DiD_Data.csv",header=T)
+
+# Estimating the DID estimator
+
+# FE:no Controls:no
+reg1 <- lm(formula = TAR ~ after_DFA, data = rawdata)
+summary(reg1)
+
+# FE:no Controls:yes
+reg2 <- lm(formula = TAR ~ after_DFA + Leverage_Ratio + Total_Asset +Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio +CPP, data = rawdata)
+summary(reg2)
+
+# FE:no Controls:yes
+didreg <- lm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset +Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio +CPP, data = rawdata)
+summary(didreg)
+#The coefficient for ‘did’ is the differences-in-differences estimator. The small coefficient indicating there is a very weak significance that the treatment has a positive effect. Overall, the trading asset ratio remains the same. 
+
+# FE:yes Controls:yes
+didreg2 <- plm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset +Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'),model = "within", data = rawdata)
+summary(didreg2)
+```
+
+### Propensity Matching ###
+```{r}
+### Propensity Match Function ###
+propMatch <- function(input_data, matching_ratio) {
+  #Clean data passed in make sure there is no null variables
+  data_to_be_matched <- as.data.frame(na.omit(input_data))
+  #Perform matching
+  m.out = matchit(formula = Affected_BHC ~ Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio + Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'), method = "nearest", ratio = matching_ratio, data = data_to_be_matched)
+  output_data <- match.data(m.out)
+  #Save matched banks 
+  matched_banks=output_data[c(1,16)]
+  #Merge matched banks with the original dataset
+  data_matched=merge(matched_banks,rawdata,by=c('id'))
+  return(data_matched)
+}
+
+# Robustness Test 1
+# Perform propensity matching for 20040930 with a matching ratio 3
+prop_data_1 <- rawdata[rawdata$Time == 20040930,] 
+prop_data_1 <- as.data.frame(na.omit(prop_data_1))
+matched_data_1 <- propMatch(prop_data_1,3)
+
+# Check result of propensity matching for 20040930
+m.out = matchit(formula = Affected_BHC ~ Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio + Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'), method = "nearest", ratio = 3, data = prop_data_1)
+summary(m.out)
+plot(m.out, type = "hist")
+
+# Checking robustness with Propensity Matching on 20040930 with a matching ratio 3
+model_prop_1 <- plm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio,index = c('id','Time'), data = matched_data_1)
+summary(model_prop_1)
+
+# Robustness Test 2
+# Perform propensity matching for 20040930 with a matching ratio 5
+prop_data_2 <- rawdata[rawdata$Time == 20040930,] 
+prop_data_2 <- as.data.frame(na.omit(prop_data_2))
+matched_data_2 <- propMatch(prop_data_2,5)
+
+# Check result of propensity matching for 20040930 with a matching ratio of 3
+m.out.2 = matchit(formula = Affected_BHC ~ Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio + Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'), method = "nearest", ratio = 5, data = prop_data_2)
+summary(m.out.2)
+plot(m.out.2, type = "hist")
+
+# Checking robustness with Propensity Matching on 20040930 with a matching ratio of 5
+model_prop_2 <- plm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio,index = c('id','Time'), data = matched_data_2)
+summary(model_prop_2)
+
+# Robustness Test 3
+# Perform propensity matching for 20090331 with a matching ratio of 3
+prop_data_3 <- rawdata[rawdata$Time == 20090630,] 
+prop_data_3 <- as.data.frame(na.omit(prop_data_3))
+matched_data_3 <- propMatch(prop_data_3,3)
+
+# Check result of propensity matching for 200906030 with a matching ratio of 3
+m.out.3 = matchit(formula = Affected_BHC ~ Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio + Real_Estate_Ratio +Liquidity_Ratio +CPP,index = c('id','Time'), method = "nearest", ratio = 3, data = prop_data_3)
+summary(m.out.3)
+plot(m.out.3, type = "hist")
+
+# Checking robustness with Propensity Matching on 20090630 with a matching ratio of 3
+model_prop_3 <- plm(formula = TAR ~ Affected_BHC*after_DFA + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio +Cost_Income_Ratio +Deposit_Ratio +Real_Estate_Ratio +Liquidity_Ratio,index = c('id','Time'), data = matched_data_3)
+summary(model_prop_3)
+
+```
+
+### Top 10 bank analysis ###
+```{r}
+# Select 10 banks with highest trading ratios at the 20040930（the very first quarter)
+banks_at_20040930 <- rawdata[rawdata$Time == 20040930,] 
+banks_at_20040930 <- as.data.frame(na.omit(banks_at_20040930))
+# Perform Propensity matching
+matched_20040930 <- propMatch(banks_at_20040930,3)
+
+# Find id of the top 10 banks 
+top10Banks <- (banks_at_20040930 %>% arrange(desc(TAR)) %>% head(10))[, "id"] 
+# Set column "top 10"
+top10AnalysisData <- matched_20040930
+top10AnalysisData$top10 <- 0
+top10AnalysisData[top10AnalysisData$id %in% top10Banks, "top10"] <- 1
+
+model_Top10 <- plm(TAR ~ (after_DFA * top10) + (after_DFA * Affected_BHC) + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = top10AnalysisData, index = c("id", "Time"))
+summary(model_Top10)
+```
+
+### Excluding non-trading BHCs analysis ###
+
+```{r}
+# Find id of the non-trading banks
+non_trading_banks <- matched_20040930[matched_20040930$TAR == 0,][, "id"] 
+# Set column "non_Trading"
+non_trading_analysis_data <- matched_20040930
+non_trading_analysis_data$nonTrading <- 0
+non_trading_analysis_data[non_trading_analysis_data$id %in% non_trading_banks, "nonTrading"] <- 1
+
+model_non_trading <- plm(TAR ~ (after_DFA * nonTrading) + (after_DFA * Affected_BHC) + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = non_trading_analysis_data, index = c("id", "Time"))
+summary(model_non_trading)
+```
+
+###  Pre-2007 affectedness analysis ###
+
+```{r}
+# Change date class from "numeric" to "date"
+rawdata$Time <- as.Date(as.character(rawdata$Time), "%Y%m%d")
+
+# Select data before 2007
+pre2007_data <- rawdata[rawdata$Time < '2007-03-31',]
+group_affect <- aggregate(TAR ~ id, pre2007_data, mean)
+pre2007_data$pre_2007_TAR <- merge(pre2007_data,group_affect,by.x = "id", by.y = "id",all.x = TRUE)[,ncol(pre2007_data)+1]
+
+# Select data in and after 2007, set column "pre_2007"
+after2007_data <- rawdata[rawdata$Time > '2006-12-31',]
+after2007_data$pre_2007_TAR <- after2007_data$TAR
+
+pre_2007_affecedness_data <- rbind(pre2007_data,after2007_data)
+
+model_pre2007_affectedness <- plm(TAR ~ (Affected_BHC * pre_2007_TAR) + (after_DFA * Affected_BHC) + Leverage_Ratio + Total_Asset + Credit_Risk_Ratio + Cost_Income_Ratio + Deposit_Ratio + Real_Estate_Ratio + Liquidity_Ratio + CPP, data = pre_2007_affecedness_data, index = c("id", "Time"))
+summary(model_pre2007_affectedness)
+```
+
+## Referrences:
+Introduction to econometrics, James H. Stock, Mark W. Watson. 2nd ed., Boston: Pearson Addison Wesley, 2007.
+“Difference‐in‐Differences Estimation”, Imbens/Wooldridge, Lecture Notes 10, summer 2007.
+http://www.nber.org/WNE/lect_10_diffindiffs.pdf
+“Lecture 3: Differences‐in‐Differences”, Fabian Waldinger
+http://www2.warwick.ac.uk/fac/soc/economics/staff/ffwaldinger/tea ching/ec9a8/slides/lecture_3_‐_did.pdf
+The Propensity paper
+
+---------------
+
